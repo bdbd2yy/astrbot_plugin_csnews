@@ -1,0 +1,6 @@
+name: astrbot_plugin_csnews
+display_name: CS更新推送
+desc: 推送CS新闻和更新插件
+version: v1.0.0
+author: bdbd2yy
+repo: https://github.com/badbirdy/astrbot_plugin_csnews
