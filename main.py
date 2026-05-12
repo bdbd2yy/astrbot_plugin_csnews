@@ -44,47 +44,46 @@ class CsNewsPlugin(Star):
         self._push_task = asyncio.create_task(self._push_loop())
         logger.info("csnews plugin initialized")
 
-    @filter.command("csnews")
+    @filter.command_group("csnews")
     async def csnews(
         self,
-        event: AstrMessageEvent,
-    ) -> AsyncGenerator[MessageEventResult, None]:
-        args = self._parse_command_args(event, "csnews")
-        if not args:
-            yield event.plain_result(self._help_text())
-            return
+    ):
+        pass
 
-        action = args[0].lower()
-        if action == "ls":
-            yield event.plain_result(
-                self._render_news_list(
-                    page=self._parse_page(args[1:]),
-                    items=await self._get_yearly_news_items(),
-                    title="CS 新闻列表",
-                    command_name="csnews",
-                    empty_text="暂时没有获取到 CS 新闻，请稍后再试。",
-                )
+    @csnews.command("ls")
+    async def list(self, event: AstrMessageEvent, page: int = 1):
+        yield event.plain_result(
+            self._render_news_list(
+                page=page,
+                items=await self._get_yearly_news_items(),
+                title="CS 新闻列表",
+                command_name="csnews",
+                empty_text="暂时没有获取到 CS 新闻，请稍后再试。",
             )
-            return
+        )
 
-        if action == "on":
-            yield event.plain_result(await self._enable_push(event))
-            return
-
-        if action == "off":
-            yield event.plain_result(await self._disable_push(event))
-            return
-
-        if action.isdigit():
-            yield self._render_news_detail(
-                event,
-                int(action),
-                await self._get_yearly_news_items(),
-                "暂时没有获取到 CS 新闻，请稍后再试。",
-            )
-            return
-
+    @csnews.command("help")
+    async def help(self, event: AstrMessageEvent):
         yield event.plain_result(self._help_text())
+
+    @csnews.command("cat")
+    async def cat(self, event: AstrMessageEvent, index: int):
+        yield self._render_news_detail(
+            event,
+            index=int(index),
+            items=await self._get_yearly_news_items(),
+            empty_text="暂时没有获取到 CS 新闻，请稍后再试。",
+        )
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @csnews.command("on")
+    async def enable_push(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._enable_push(event))
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @csnews.command("off")
+    async def disable_push(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._disable_push(event))
 
     @filter.command("csupdates")
     async def csupdates(
