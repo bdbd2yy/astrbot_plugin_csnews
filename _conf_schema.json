@@ -1,0 +1,33 @@
+{
+  "enabled_sessions": {
+    "type": "list",
+    "description": "开启CS新闻自动推送的会话ID列表，可用 /sid 查看当前会话ID。",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  },
+  "push_time": {
+    "type": "string",
+    "description": "每日定时推送时间",
+    "default": "09:00",
+    "options": [
+      "06:00",
+      "07:00",
+      "08:00",
+      "09:00",
+      "10:00",
+      "12:00",
+      "14:00",
+      "16:00",
+      "18:00",
+      "20:00",
+      "22:00"
+    ]
+  },
+  "push_notice_message": {
+    "type": "string",
+    "description": "推送更新时发送的提示消息",
+    "default": "最爱的cs更新了！"
+  }
+}

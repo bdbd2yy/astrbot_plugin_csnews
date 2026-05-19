@@ -27,6 +27,7 @@ class CsNewsPlugin(Star):
     KV_LAST_PUSHED_GID = "last_pushed_gid"
     CONFIG_ENABLED_SESSIONS = "enabled_sessions"
     CONFIG_PUSH_TIME = "push_time"
+    CONFIG_PUSH_NOTICE_MESSAGE = "push_notice_message"
     DEFAULT_PUSH_HOUR = 9
     DEFAULT_PUSH_MINUTE = 0
 
@@ -267,7 +268,7 @@ class CsNewsPlugin(Star):
         try:
             notice_sent = await self._context.send_message(
                 session,
-                MessageChain([Plain("最爱的cs更新了！")]),
+                MessageChain([Plain(self._push_notice_message)]),
             )
             if not notice_sent:
                 return False
@@ -342,6 +343,13 @@ class CsNewsPlugin(Star):
     @property
     def _push_time_display(self) -> str:
         return f"{self._push_hour:02d}:{self._push_minute:02d}"
+
+    @property
+    def _push_notice_message(self) -> str:
+        return str(
+            self.plugin_config.get(self.CONFIG_PUSH_NOTICE_MESSAGE)
+            or "最爱的cs更新了！"
+        )
 
     def _parse_push_time(self) -> tuple[int, int]:
         raw = self.plugin_config.get(self.CONFIG_PUSH_TIME, "")
