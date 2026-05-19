@@ -18,7 +18,6 @@ class CsNewsSettings:
     list_cache_ttl_seconds: int = 10 * 60
     recent_days: int = 365
     latest_fetch_count: int = 10
-    push_interval_seconds: int = 10 * 60
     detail_max_chars: int = 3500
     request_timeout_seconds: int = 20
     cache_file_name: str = "news_cache.json"

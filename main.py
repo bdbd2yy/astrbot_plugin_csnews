@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import re
 from collections.abc import AsyncGenerator, Callable
+from datetime import datetime, timedelta
 
 import aiohttp
 
@@ -23,11 +25,17 @@ from .storage import NewsStorage
 class CsNewsPlugin(Star):
     KV_ENABLED_SESSIONS = "enabled_sessions"
     KV_LAST_PUSHED_GID = "last_pushed_gid"
+    CONFIG_ENABLED_SESSIONS = "enabled_sessions"
+    CONFIG_PUSH_TIME = "push_time"
+    DEFAULT_PUSH_HOUR = 9
+    DEFAULT_PUSH_MINUTE = 0
 
-    def __init__(self, context: Context):
-        super().__init__(context)
+    def __init__(self, context: Context, config: dict | None = None):
+        super().__init__(context, config)
         self._context = context
         self.settings = CsNewsSettings()
+        self.plugin_config: dict = config or {}
+        self._push_hour, self._push_minute = self._parse_push_time()
         self.data_dir = StarTools.get_data_dir()
         self.storage = NewsStorage(self.data_dir, self.settings)
         self.formatter = NewsFormatter(self.settings)
@@ -170,10 +178,10 @@ class CsNewsPlugin(Star):
             return "csnews on 只能在群聊中使用"
 
         session = event.unified_msg_origin
-        sessions = await self._get_enabled_sessions()
-        if session not in sessions:
-            sessions.append(session)
-            await self.put_kv_data(self.KV_ENABLED_SESSIONS, sessions)
+        kv_sessions = await self._get_kv_sessions()
+        if session not in kv_sessions:
+            kv_sessions.append(session)
+            await self.put_kv_data(self.KV_ENABLED_SESSIONS, kv_sessions)
 
         latest_items = await self._fetch_latest_news()
         if latest_items and not await self._get_last_pushed_gid():
@@ -183,22 +191,40 @@ class CsNewsPlugin(Star):
 
     async def _disable_push(self, event: AstrMessageEvent) -> str:
         session = event.unified_msg_origin
-        sessions = await self._get_enabled_sessions()
-        if session in sessions:
-            sessions.remove(session)
-            await self.put_kv_data(self.KV_ENABLED_SESSIONS, sessions)
+
+        if session in self._get_config_sessions():
+            return "此群聊推送在插件配置中开启，请在 Web UI 配置页面移除后重试。"
+
+        kv_sessions = await self._get_kv_sessions()
+        if session in kv_sessions:
+            kv_sessions.remove(session)
+            await self.put_kv_data(self.KV_ENABLED_SESSIONS, kv_sessions)
             return "CS 新闻推送被关闭了！"
         return "本群还没有开启过新闻推送！"
 
     async def _push_loop(self) -> None:
         while True:
             try:
-                await self._check_and_push_new_news()
+                sleep_seconds = self._seconds_until_next_push()
+                logger.info(
+                    f"csnews next daily push at {self._push_time_display}, "
+                    f"sleeping {sleep_seconds:.0f}s"
+                )
+                await asyncio.sleep(sleep_seconds)
+
+                for attempt in range(3):
+                    try:
+                        await self._check_and_push_new_news()
+                        break
+                    except Exception:
+                        logger.error(
+                            f"csnews daily push failed (attempt {attempt + 1}/3)",
+                            exc_info=True,
+                        )
+                        if attempt < 2:
+                            await asyncio.sleep(60)
             except asyncio.CancelledError:
                 raise
-            except Exception as e:
-                logger.error(f"csnews push check failed: {e}")
-            await asyncio.sleep(self.settings.push_interval_seconds)
 
     async def _check_and_push_new_news(self) -> None:
         sessions = await self._get_enabled_sessions()
@@ -241,7 +267,7 @@ class CsNewsPlugin(Star):
         try:
             notice_sent = await self._context.send_message(
                 session,
-                MessageChain([Plain("cs更新了！")]),
+                MessageChain([Plain("最爱的cs更新了！")]),
             )
             if not notice_sent:
                 return False
@@ -295,11 +321,46 @@ class CsNewsPlugin(Star):
             : self.settings.latest_fetch_count
         ]
 
+    def _get_config_sessions(self) -> list[str]:
+        return [
+            str(s).strip()
+            for s in self.plugin_config.get(self.CONFIG_ENABLED_SESSIONS, [])
+            if str(s).strip()
+        ]
+
     async def _get_enabled_sessions(self) -> list[str]:
+        config_sessions = self._get_config_sessions()
+        kv_sessions = await self._get_kv_sessions()
+        return list(dict.fromkeys(config_sessions + kv_sessions))
+
+    async def _get_kv_sessions(self) -> list[str]:
         value = await self.get_kv_data(self.KV_ENABLED_SESSIONS, [])
         if not isinstance(value, list):
             return []
         return [item for item in value if isinstance(item, str) and item]
+
+    @property
+    def _push_time_display(self) -> str:
+        return f"{self._push_hour:02d}:{self._push_minute:02d}"
+
+    def _parse_push_time(self) -> tuple[int, int]:
+        raw = self.plugin_config.get(self.CONFIG_PUSH_TIME, "")
+        try:
+            hour, minute = map(int, str(raw).split(":"))
+            return hour, minute
+        except (ValueError, AttributeError):
+            return self.DEFAULT_PUSH_HOUR, self.DEFAULT_PUSH_MINUTE
+
+    def _seconds_until_next_push(self) -> int:
+        now = datetime.now()
+        target = now.replace(
+            hour=self._push_hour, minute=self._push_minute, second=0, microsecond=0
+        )
+        if target <= now:
+            target += timedelta(days=1)
+
+        jitter = random.randint(0, 60)
+        return max(int((target - now).total_seconds()) + jitter, 1)
 
     async def _get_last_pushed_gid(self) -> str:
         value = await self.get_kv_data(self.KV_LAST_PUSHED_GID, "")
@@ -340,14 +401,16 @@ class CsNewsPlugin(Star):
     @staticmethod
     def _items_after_last_gid(items: list[NewsItem], last_gid: str) -> list[NewsItem]:
         new_items: list[NewsItem] = []
+        found_last = False
         for item in items:
             if item.gid == last_gid:
+                found_last = True
                 break
             new_items.append(item)
 
         if not new_items:
             return []
-        if all(item.gid != last_gid for item in items):
+        if not found_last:
             return new_items[:1]
         return new_items
 
