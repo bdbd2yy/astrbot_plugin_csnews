@@ -5,6 +5,7 @@ import random
 import re
 from collections.abc import AsyncGenerator, Callable
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import aiohttp
 
@@ -19,6 +20,9 @@ from .config import CsNewsSettings
 from .formatter import NewsFormatter
 from .models import NewsItem
 from .storage import NewsStorage
+
+
+SHANGHAI_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 @register("csnews", "bdbd2yy", "CS2 official news push plugin", "1.0.0")
@@ -360,7 +364,7 @@ class CsNewsPlugin(Star):
             return self.DEFAULT_PUSH_HOUR, self.DEFAULT_PUSH_MINUTE
 
     def _seconds_until_next_push(self) -> int:
-        now = datetime.now()
+        now = datetime.now(SHANGHAI_TIMEZONE)
         target = now.replace(
             hour=self._push_hour, minute=self._push_minute, second=0, microsecond=0
         )
